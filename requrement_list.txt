@@ -1,0 +1,95 @@
+AWS migration upgrade
+
+AWS infrastructure is not our area of expertise, so we would leave the technical stuff regarding
+the AWS structure to the professionals, you. When it comes to what we have and need on the
+development side - we can provide that part, allowing the DevOps team to propose the most
+suitable and optimal solutions that align with our application's structure.
+Currently we have a working but outdated AWS structure as described in other AWS files. You
+can check out those for more information about our structure and deployment process. I would
+give you a shorter explanation now about what we have and what we need for these frontend
+and backend version migrations. And then, you can ask me any questions that you might have.
+
+Short description on what we have:
+1. LQ 3 project has three(two) AWS environments: (dev01), staging01 and production01.
+2. Each of them host 3 applications that depend on each other and act as a monolith: 2x
+Angular4 apps + 1x Symfony API app.
+3. Deployment is done via Jenkins currently and the process is documented.
+4. Blue-Green deployment is set up (or something similar to it).
+5. We are using Docker containers for all 3 app separately. We use them on Localhost and
+on the AWS environments as well, currently.
+6. We have separate AWS accounts for Production and for Staging(and Dev).
+7. For Production, there are always 2 production EC2 instances running at the same time. I
+forgot the reason for it, but it was needed and it was like that for a long time. Maybe if
+one fails then the other one takes over.
+○ in order to mimic blue-green deployment, we have 2 instances (prod and
+standby) that we use to deploy and not to have downtime.
+○ The Standby instance is scaled down(not active) so we do not get billed for it. We
+scale it up once we need it, once we do the deployment, and then scale it down
+when it is no longer needed.
+○ We deploy 2 times, once on Standby instance and then move the traffic to that
+instance, and then the 2nd time to the Prod instance and then we move the traffic
+back to the Prod instance. That is some sort of the blue-green deployment
+solution that was made a long time ago by the devops.
+
+8. RDS:
+○ In production we have a Write DB and a ReadOnly DB that we use.
+9. Cloudflare is used.
+
+Short description on what we need for Angular and
+Symfony version migrations only:
+1. We are open to suggestions, but maybe the best approach would be to not touch the
+current environments and setup that we have, and create parallel environments that
+would fit the migration version being handled at that specific time.
+a. This is maybe a good approach because we will not be doing migrations all the
+time, but sometimes will need to switch back to older versions in order to do
+some bug fixes or maybe some new features there as well (which is going to be a
+bit tricky, but probably needed).
+b. If we do this, AWS bill will probably increase (not sure how much).
+c. Parallel environments that are needed are:
+i. Staging
+ii. Production
+d. Also, Databases will need to be copied from those environments into the parallel
+ones as well.
+
+2. We would probably need 2x parallel environments mentioned from above:
+a. 1x Angular migrations, and 1x for Symfony migrations. So, Angular (Staging-front
+and Production-front) + Symfony (Staging-back and Production-back).
+b. It is probably better to have frontend and backend migrations and testing
+separated since their upgrades do not depend on each other, and because it will
+be easier to debug the issue when it happens - because if the apps are merged
+into 1 environment(and 1 git branch) then if something brakes we do not know is
+the problem on frontend or backend. Better to split them into 2.
+c. One recommendation is not to do both upgrades at the same time. So, we can
+maybe have only 1 new set of Staging+Production environments and test only
+Frontend or Backend at the same time. Not together.
+d. Keep in mind that Production has 2 instances (blue-green deployment) while
+Staging has only 1 since we do not mind the downtime on Staging. But, since this
+is going to be only for testing the migrations - then we could also not care about
+downtime on Production here.
+
+3. Probably, version upgrades are needed for: Angular, Symfony, Php, Mysql, Docker,
+(Composer), etc.
+4. Docker help would also be appreciated from Devops.
+5. Fix for Export and Cron-jobs is needed as well for current setup. If possible.
+
+Also good to have on AWS, but maybe in the future:
+1. There are 2 older documents with suggested AWS structure for us. They should be
+reviewed and altered in order to user the latest features and structure that AWS offers.
+2. Add auto-scaling(load balancers) to listen to traffic increase/decrease and to increase or
+decrease the resources (instance size, etc) when needed.
+
+3. Remove Jenkins for deployment and use Bitbucket Pipelines (or AWS pipeline) to
+directly deploy to needed environments.
+4. Connect AWS to Slack to send notifications and alarms to Slack when the deployment
+happens and the status of the deployment and other important info.
+5. Better Logging and Monitoring (CloudWatch, CloudTrail,...).
+6. Better Blue-Green deployment.
+7. Daily DB backups with Point in time backup and revert.
+8. Script to clean up old users on AWS Console that did not use it for 6 months or so.
+
+Questions and Final thoughts:
+● We are open to any suggestions on how the new structure should look and work, we
+leave that to the professionals.
+● I hope I managed to explain a bit our situation , structure and needs
+● Are there any (other)questions that I could help you with?
+● Feel free to reach out if you have any other questions in the meantime.
