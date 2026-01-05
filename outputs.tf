@@ -1,54 +1,82 @@
-output "instance_id" {
-  description = "ID of the EC2 instance"
-  value       = aws_instance.simple_ec2.id
+# Development Environment Outputs
+output "dev_instance_public_ip" {
+  description = "Public IP of the dev environment instance"
+  value       = var.deploy_dev ? module.dev[0].instance_public_ip : null
 }
 
-output "instance_public_ip" {
-  description = "Public IP address of the EC2 instance"
-  value       = aws_instance.simple_ec2.public_ip
+output "dev_ssh_connection_command" {
+  description = "SSH command for dev environment"
+  value       = var.deploy_dev ? module.dev[0].ssh_connection_command : null
 }
 
-output "instance_state" {
-  description = "Current state of the EC2 instance"
-  value       = aws_instance.simple_ec2.instance_state
+output "dev_application_urls" {
+  description = "Application URLs for dev environment"
+  value       = var.deploy_dev ? module.dev[0].application_urls : null
 }
 
-output "docker_setup_info" {
-  description = "Information about Docker setup"
-  value       = "Docker and Docker Compose are installed. Nginx web server container is running on port 80."
+# Staging Environment Outputs
+output "staging_instance_public_ip" {
+  description = "Public IP of the staging environment instance"
+  value       = var.deploy_staging ? module.staging[0].instance_public_ip : null
 }
 
-output "ssh_private_key" {
-  description = "Private SSH key for connecting to the instance"
-  value       = tls_private_key.ssh_key.private_key_pem
-  sensitive   = true
+output "staging_ssh_connection_command" {
+  description = "SSH command for staging environment"
+  value       = var.deploy_staging ? module.staging[0].ssh_connection_command : null
 }
 
-output "ssh_connection_command" {
-  description = "SSH command to connect to the instance"
-  value       = "ssh -i <key-file> ec2-user@${aws_instance.simple_ec2.public_ip}"
+output "staging_application_urls" {
+  description = "Application URLs for staging environment"
+  value       = var.deploy_staging ? module.staging[0].application_urls : null
 }
 
-output "ssh_key_download_command" {
-  description = "Command to save SSH private key to file"
-  value       = "terraform output -raw ssh_private_key > ec2-ssh-key.pem && chmod 600 ec2-ssh-key.pem"
+# Production Environment Outputs (2 instances)
+output "production_primary_instance_public_ip" {
+  description = "Public IP of the production primary instance"
+  value       = var.deploy_production ? module.production[0].primary_instance_public_ip : null
 }
 
-output "security_group_id" {
-  description = "ID of the security group attached to the instance"
-  value       = aws_security_group.ec2_sg.id
+output "production_secondary_instance_public_ip" {
+  description = "Public IP of the production secondary instance"
+  value       = var.deploy_production ? module.production[0].secondary_instance_public_ip : null
 }
 
-output "open_ports" {
-  description = "Open ports on the instance"
-  value       = "22 (SSH), 80 (HTTP), 443 (HTTPS), 4444 (Symfony API), 5555 (Angular4 App)"
+output "production_ssh_connection_command_primary" {
+  description = "SSH command for production primary instance"
+  value       = var.deploy_production ? module.production[0].ssh_connection_command_primary : null
 }
 
-output "application_urls" {
-  description = "URLs to access the running applications"
+output "production_ssh_connection_command_secondary" {
+  description = "SSH command for production secondary instance"
+  value       = var.deploy_production ? module.production[0].ssh_connection_command_secondary : null
+}
+
+output "production_application_urls_primary" {
+  description = "Application URLs for production primary instance"
+  value = var.deploy_production ? {
+    "Main Web Server" = "http://${module.production[0].primary_instance_public_ip}"
+    "Symfony API"     = "http://${module.production[0].primary_instance_public_ip}:4444"
+    "Angular4 App"    = "http://${module.production[0].primary_instance_public_ip}:5555"
+  } : null
+}
+
+output "production_application_urls_secondary" {
+  description = "Application URLs for production secondary instance"
+  value = var.deploy_production ? {
+    "Main Web Server" = "http://${module.production[0].secondary_instance_public_ip}"
+    "Symfony API"     = "http://${module.production[0].secondary_instance_public_ip}:4444"
+    "Angular4 App"    = "http://${module.production[0].secondary_instance_public_ip}:5555"
+  } : null
+}
+
+# Summary Output
+output "deployment_summary" {
+  description = "Summary of deployed environments"
   value = {
-    "Main Web Server" = "http://${aws_instance.simple_ec2.public_ip}"
-    "Symfony API"     = "http://${aws_instance.simple_ec2.public_ip}:4444"
-    "Angular4 App"    = "http://${aws_instance.simple_ec2.public_ip}:5555"
+    dev_deployed         = var.deploy_dev
+    staging_deployed     = var.deploy_staging
+    production_deployed  = var.deploy_production
+    total_environments   = (var.deploy_dev ? 1 : 0) + (var.deploy_staging ? 1 : 0) + (var.deploy_production ? 1 : 0)
+    production_instances = var.deploy_production ? 2 : 0
   }
 }
