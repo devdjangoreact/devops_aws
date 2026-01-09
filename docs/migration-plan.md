@@ -139,7 +139,7 @@ For detailed Bitbucket Pipelines configuration, see: [Bitbucket Pipelines YAML](
 
 For detailed production architecture documentation, see: [Production Architecture Overview](production-architecture.md)
 
-![Production Architecture](image/prod.svg)
+![Production Architecture](image/prod_png.png)
 
 ---
 

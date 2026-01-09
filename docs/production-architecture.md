@@ -1,6 +1,6 @@
 # AWS Production Infrastructure Architecture - Modernized Design
 
-<img src="image/prod.svg" alt="Production Architecture" width="1200" height="800" />
+<img src="image/prod_png.png" alt="Production Architecture" width="1200" height="800" />
 
 ## Overview
 
