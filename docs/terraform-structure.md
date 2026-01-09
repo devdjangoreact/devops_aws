@@ -45,6 +45,7 @@ terraform/
 **Purpose:** Creates the network foundation with VPC, subnets, routing, and VPC endpoints.
 
 **Resources Created:**
+
 - VPC with configurable CIDR block
 - Public and private subnets across 3 AZs
 - Internet Gateway and NAT Gateways
@@ -53,12 +54,14 @@ terraform/
 - VPC flow logs
 
 **Key Variables:**
+
 - `vpc_cidr` - VPC CIDR block
 - `public_subnets` - List of public subnet CIDRs
 - `private_subnets` - List of private subnet CIDRs
 - `availability_zones` - List of AZs to use
 
 **Outputs:**
+
 - `vpc_id` - VPC ID
 - `public_subnet_ids` - List of public subnet IDs
 - `private_subnet_ids` - List of private subnet IDs
@@ -69,6 +72,7 @@ terraform/
 **Purpose:** Manages ECS cluster, task definitions, and services for both frontend and backend applications.
 
 **Resources Created:**
+
 - ECS cluster with Fargate capacity provider
 - Task definitions for frontend and backend services
 - ECS services with auto-scaling policies
@@ -76,6 +80,7 @@ terraform/
 - IAM roles for task execution
 
 **Key Variables:**
+
 - `cluster_name` - Name of the ECS cluster
 - `frontend_image_uri` - ECR URI for frontend Docker image
 - `backend_image_uri` - ECR URI for backend Docker image
@@ -87,6 +92,7 @@ terraform/
 - `memory_backend` - Memory for backend tasks
 
 **Outputs:**
+
 - `cluster_id` - ECS cluster ID
 - `frontend_service_name` - Frontend service name
 - `backend_service_name` - Backend service name
@@ -97,6 +103,7 @@ terraform/
 **Purpose:** Creates Aurora MySQL Serverless v2 cluster with read replicas.
 
 **Resources Created:**
+
 - Aurora MySQL cluster (Serverless v2)
 - Cluster instances (writer and readers)
 - DB subnet group
@@ -105,6 +112,7 @@ terraform/
 - CloudWatch alarms for monitoring
 
 **Key Variables:**
+
 - `cluster_identifier` - Unique identifier for the cluster
 - `engine_version` - Aurora MySQL version
 - `database_name` - Initial database name
@@ -114,6 +122,7 @@ terraform/
 - `backup_retention_period` - Days to retain backups
 
 **Outputs:**
+
 - `cluster_endpoint` - Cluster endpoint for read/write
 - `reader_endpoint` - Reader endpoint for read-only
 - `cluster_arn` - Cluster ARN
@@ -124,6 +133,7 @@ terraform/
 **Purpose:** Configures ElastiCache Redis cluster for caching.
 
 **Resources Created:**
+
 - Redis replication group
 - Subnet group for Redis
 - Security group
@@ -131,12 +141,14 @@ terraform/
 - CloudWatch alarms
 
 **Key Variables:**
+
 - `cluster_id` - Redis cluster identifier
 - `node_type` - Instance type (e.g., cache.t3.micro)
 - `num_cache_clusters` - Number of cache clusters
 - `parameter_group_name` - Parameter group name
 
 **Outputs:**
+
 - `primary_endpoint_address` - Primary Redis endpoint
 - `reader_endpoint_address` - Reader Redis endpoint
 - `port` - Redis port number
@@ -146,6 +158,7 @@ terraform/
 **Purpose:** Creates Application Load Balancer with target groups for blue-green deployments.
 
 **Resources Created:**
+
 - Application Load Balancer
 - Target groups for blue and green environments
 - Listener rules for path-based routing
@@ -153,6 +166,7 @@ terraform/
 - CloudWatch alarms
 
 **Key Variables:**
+
 - `load_balancer_name` - Name of the load balancer
 - `vpc_id` - VPC ID where ALB will be created
 - `public_subnet_ids` - List of public subnet IDs
@@ -161,6 +175,7 @@ terraform/
 - `backend_port` - Port for backend service
 
 **Outputs:**
+
 - `alb_dns_name` - ALB DNS name
 - `alb_arn` - ALB ARN
 - `blue_target_group_arn` - Blue target group ARN
@@ -172,6 +187,7 @@ terraform/
 **Purpose:** Creates S3 buckets for assets, logs, and backups with appropriate configurations.
 
 **Resources Created:**
+
 - S3 buckets with versioning
 - Bucket policies
 - Lifecycle configurations
@@ -179,6 +195,7 @@ terraform/
 - Replication configurations for backups
 
 **Key Variables:**
+
 - `assets_bucket_name` - Name for assets bucket
 - `logs_bucket_name` - Name for logs bucket
 - `backups_bucket_name` - Name for backups bucket
@@ -186,6 +203,7 @@ terraform/
 - `backups_retention_days` - Days to retain backups
 
 **Outputs:**
+
 - `assets_bucket_id` - Assets bucket ID
 - `logs_bucket_id` - Logs bucket ID
 - `backups_bucket_id` - Backups bucket ID
@@ -195,18 +213,21 @@ terraform/
 **Purpose:** Manages Elastic Container Registry repositories for Docker images.
 
 **Resources Created:**
+
 - ECR repositories for frontend and backend
 - Repository policies
 - Lifecycle policies to manage image retention
 - Scan on push configurations
 
 **Key Variables:**
+
 - `frontend_repository_name` - Name for frontend repository
 - `backend_repository_name` - Name for backend repository
 - `image_tag_mutability` - IMMUTABLE or MUTABLE
 - `scan_on_push` - Enable vulnerability scanning
 
 **Outputs:**
+
 - `frontend_repository_url` - Frontend repository URL
 - `backend_repository_url` - Backend repository URL
 
@@ -215,17 +236,20 @@ terraform/
 **Purpose:** Sets up CloudWatch monitoring, alarms, and dashboards.
 
 **Resources Created:**
+
 - CloudWatch alarms for CPU, memory, and errors
 - SNS topics for notifications
 - CloudWatch dashboard
 - Budget alarms
 
 **Key Variables:**
+
 - `alarm_email` - Email for alarm notifications
 - `slack_webhook_url` - Slack webhook for notifications
 - `budget_limit` - Monthly budget limit
 
 **Outputs:**
+
 - `sns_topic_arn` - SNS topic ARN for alarms
 - `dashboard_url` - CloudWatch dashboard URL
 
@@ -234,16 +258,19 @@ terraform/
 **Purpose:** Creates IAM roles and policies for ECS tasks and CI/CD pipelines.
 
 **Resources Created:**
+
 - ECS task execution role
 - ECS task role
 - CodeBuild/CodePipeline roles
 - Custom policies for S3, ECR, CloudWatch access
 
 **Key Variables:**
+
 - `environment` - Environment name (staging/production)
 - `project_name` - Project identifier
 
 **Outputs:**
+
 - `task_execution_role_arn` - Task execution role ARN
 - `task_role_arn` - Task role ARN
 - `pipeline_role_arn` - CI/CD pipeline role ARN
@@ -253,17 +280,20 @@ terraform/
 **Purpose:** Configures security groups and network ACLs.
 
 **Resources Created:**
+
 - Security groups for ALB, ECS, RDS, Redis
 - Network ACLs
 - WAF rules (if needed)
 
 **Key Variables:**
+
 - `vpc_id` - VPC ID
 - `alb_security_group_name` - ALB security group name
 - `ecs_security_group_name` - ECS security group name
 - `rds_security_group_name` - RDS security group name
 
 **Outputs:**
+
 - `alb_security_group_id` - ALB security group ID
 - `ecs_security_group_id` - ECS security group ID
 - `rds_security_group_id` - RDS security group ID
@@ -315,6 +345,7 @@ module "ecs" {
 ## State Management
 
 **Backend Configuration:**
+
 ```hcl
 terraform {
   backend "s3" {

@@ -9,7 +9,7 @@ The proposed target architecture is based on **container orchestration with Amaz
 Key business goals addressed:
 
 - Enable **daily or on-demand releases** with minimal risk
-- Reduce AWS monthly cost from **~$2,500 to < $1,000** (including database)
+- Reduce AWS monthly cost from **~$2,500 to < $1,200** (including database)
 - Support **parallel frontend and backend migrations**
 - Ensure **zero-downtime production deployments**
 - Improve observability, security, and scalability
@@ -234,7 +234,7 @@ For detailed production architecture documentation, see: [Production Architectur
 | Logs       | Unlimited     | Controlled retention    |
 | NAT        | Always-on     | Optimized               |
 
-**Expected monthly cost:** $700–$1,000
+**Expected monthly cost:** $970–$1,200
 
 For detailed cost breakdown and analysis, see: [Cost Analysis Before vs After](cost-breakdown.md)
 

@@ -22,7 +22,7 @@ This document describes the complete production infrastructure architecture for 
 - ARN: arn:aws:elasticloadbalancing:us-west-2:...
 - Routing Rules:
   - Path: / → Frontend Target Group
-  - Path: /api/* → Backend API Target Group
+  - Path: /api/\* → Backend API Target Group
 - Features:
   - SSL termination (TLS 1.2/1.3)
   - Health checks on all targets
@@ -145,12 +145,14 @@ This document describes the complete production infrastructure architecture for 
 **Amazon S3 Buckets**
 
 - **lq3-assets:** Static files, user uploads, Angular build artifacts
+
   - Versioning: Enabled
   - Lifecycle: Transition to Glacier after 90 days
   - CORS: Configured for web access
   - Encryption: SSE-S3 default encryption
 
 - **lq3-logs:** ALB access logs, CloudTrail logs, application logs
+
   - Lifecycle: Delete after 90 days (reduced from 1.4TB indefinite)
   - Partitioning: Year/month/day/hour structure
 
@@ -162,6 +164,7 @@ This document describes the complete production infrastructure architecture for 
 **Amazon ECR Repositories**
 
 - **frontend-images:** Docker images for Angular applications
+
   - Tag immutability: Enabled
   - Scan on push: Vulnerability scanning
   - Lifecycle: Keep last 10 images
@@ -191,6 +194,7 @@ This document describes the complete production infrastructure architecture for 
 **Security Configuration**
 
 - **Security Groups:**
+
   - ecs-tasks-sg: Ports 3000, 8000 from ALB only
   - rds-sg: Port 3306 from ECS tasks only
   - redis-sg: Port 6379 from ECS tasks only
@@ -209,12 +213,14 @@ This document describes the complete production infrastructure architecture for 
 **CloudWatch**
 
 - **Metrics:**
+
   - ECS: CPUUtilization, MemoryUtilization, RunningTaskCount
   - RDS: DatabaseConnections, CPUUtilization, FreeableMemory
   - ALB: RequestCount, TargetResponseTime, HTTPCode_ELB_5XX_Count
   - ElastiCache: CPUUtilization, CacheHits, CacheMisses
 
 - **Alarms:**
+
   - High CPU (>70% for 5 minutes) - triggers scaling
   - High memory (>80% for 5 minutes) - triggers scaling
   - Health check failures (>2 in 5 minutes) - triggers task replacement
@@ -246,6 +252,7 @@ This document describes the complete production infrastructure architecture for 
 
 - Triggers: Push to main/staging branches, pull request updates
 - Stages:
+
   - Build: Node/Angular and PHP/Symfony builds
   - Test: Unit, integration, security scans
   - Docker Build: Multi-version Docker images
@@ -274,21 +281,25 @@ This document describes the complete production infrastructure architecture for 
 **Deployment Flow**
 
 - **Initial State:**
+
   - BLUE target group: 100% traffic, running version N
   - GREEN target group: 0% traffic, no tasks
 
 - **Deploy to GREEN:**
+
   - New tasks launched with version N+1
   - Health checks pass before proceeding
   - Smoke tests executed automatically
 
 - **Traffic Shift (gradual):**
+
   - 10% traffic to GREEN for 5 minutes
   - Monitor metrics and error rates
   - 50% traffic to GREEN for 5 minutes
   - 100% traffic to GREEN
 
 - **Verification:**
+
   - Automated post-deployment tests
   - Manual verification if configured
   - Monitor for 15 minutes
@@ -309,6 +320,7 @@ This document describes the complete production infrastructure architecture for 
 **ECS Service Scaling**
 
 - **Frontend Scaling:**
+
   - Scale-out: CPU > 70% for 2 minutes
   - Scale-in: CPU < 30% for 5 minutes
   - Cooldown: 60 seconds between scaling actions
