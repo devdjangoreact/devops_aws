@@ -1,243 +1,269 @@
-# AWS Infrastructure Migration Plan
+# AWS Infrastructure Modernization and Migration Plan
 
-## Executive Summary
+## 1. Executive Summary
 
-Based on the requirements document, this plan outlines the creation of parallel AWS environments for Angular and Symfony version migrations while preserving the existing infrastructure.
+This document outlines a recommended modernization of the existing AWS infrastructure to improve **deployment speed** , **operational simplicity** , **reliability** , and **cost efficiency** .
 
-## Current Infrastructure Analysis
+The proposed target architecture is based on **container orchestration with Amazon ECS (Fargate)** , **Infrastructure as Code using Terraform** , and **CI/CD via Bitbucket Pipelines** , while preserving the existing legacy environments unchanged.
 
-### Existing Setup
-- **Environments**: dev01, staging01, production01
-- **Applications**: 2 Angular4 frontend apps + 1 Symfony API backend
-- **Deployment**: Jenkins-based with Blue-Green deployment
-- **Containerization**: Docker for all applications
-- **AWS Accounts**: Separate accounts for Production and Staging/Dev
-- **Production**: 2 EC2 instances (active + standby scaled down)
-- **Database**: RDS with Write and ReadOnly instances
-- **CDN**: Cloudflare
+Key business goals addressed:
 
-## Migration Strategy: Parallel Environments
-
-### Phase 1: Infrastructure Planning & Design
-
-#### 1.1 Environment Architecture
-```
-Current Environments:
-├── dev01 (Staging/Dev Account)
-├── staging01 (Staging/Dev Account)
-└── production01 (Production Account)
-    ├── prod-instance (active)
-    └── standby-instance (scaled down)
-
-New Parallel Environments:
-├── angular-migration (Staging/Dev Account)
-│   ├── staging-front (1 instance)
-│   └── production-front (2 instances - blue-green)
-└── symfony-migration (Staging/Dev Account)
-    ├── staging-back (1 instance)
-    └── production-back (2 instances - blue-green)
-```
-
-#### 1.2 Required AWS Resources per Environment
-
-**Compute (EC2):**
-- Instance Type: t3.micro (Free Tier eligible)
-- AMI: Amazon Linux 2 (latest via data source)
-- Security Groups: Web access (80/443), SSH (22)
-- Auto Scaling Groups for production environments
-
-**Database (RDS):**
-- Engine: MySQL (based on existing setup)
-- Multi-AZ: Enabled for production
-- Read Replicas: 1 for production environments
-- Backup: Daily with 7-day retention
-
-**Storage (EBS):**
-- Root Volume: 20GB gp3
-- Additional volumes as needed
-
-**Networking:**
-- VPC with public/private subnets
-- Internet Gateway
-- NAT Gateway for private subnets
-- Route Tables
-- Security Groups
-
-**Load Balancing:**
-- Application Load Balancer (ALB) for production
-- Target Groups for blue-green deployment
-
-**DNS & CDN:**
-- Route 53 hosted zones
-- Cloudflare integration (existing)
-
-### Phase 2: Core Infrastructure Setup
-
-#### 2.1 Terraform Module Structure
-```
-terraform/
-├── modules/
-│   ├── vpc/           # Networking components
-│   ├── ec2/           # EC2 instances and launch templates
-│   ├── rds/           # Database instances
-│   ├── alb/           # Load balancers
-│   └── security/      # Security groups and IAM
-├── environments/
-│   ├── angular-staging/
-│   ├── angular-production/
-│   ├── symfony-staging/
-│   └── symfony-production/
-└── shared/            # Shared resources
-```
-
-#### 2.2 Implementation Order
-1. **Networking (VPC)**: Base networking infrastructure
-2. **Security**: IAM roles, security groups, key pairs
-3. **Database**: RDS instances and replicas
-4. **Compute**: EC2 instances with auto-scaling
-5. **Load Balancing**: ALBs and target groups
-6. **DNS**: Route 53 configuration
-
-### Phase 3: Migration-Specific Components
-
-#### 3.1 Database Migration Strategy
-- **Source**: Copy from existing environments
-- **Method**: mysqldump or AWS DMS
-- **Testing**: Validate data integrity post-migration
-- **Rollback**: Keep original databases intact
-
-#### 3.2 Application Deployment
-- **Container Registry**: Amazon ECR for Docker images
-- **CI/CD**: Update Jenkins pipelines or implement new ones
-- **Blue-Green**: Implement proper blue-green with ALB
-
-#### 3.3 Version Management
-- **Frontend**: Angular version upgrades
-- **Backend**: Symfony + PHP version upgrades
-- **Dependencies**: Update Composer, Node.js, etc.
-
-### Phase 4: Security & Compliance
-
-#### 4.1 Security Groups
-```
-Web Servers:
-- Inbound: 80/443 from Cloudflare IPs
-- Inbound: 22 from bastion hosts only
-- Outbound: All traffic
-
-Database:
-- Inbound: 3306 from application servers only
-- Outbound: None
-```
-
-#### 4.2 IAM Roles
-- EC2 instances: Read access to ECR, CloudWatch logs
-- Deployment users: Limited permissions for CI/CD
-
-#### 4.3 Encryption
-- EBS volumes: Encrypted
-- RDS: Encrypted at rest
-- SSL/TLS: Required for all connections
-
-### Phase 5: Monitoring & Logging
-
-#### 5.1 CloudWatch
-- EC2 metrics and logs
-- ALB access logs
-- RDS monitoring
-- Custom dashboards
-
-#### 5.2 Alerts
-- Instance failures
-- High CPU/memory usage
-- Database connections
-- SSL certificate expiration
-
-### Phase 6: Testing & Validation
-
-#### 6.1 Staging Tests
-- Functional testing
-- Performance testing
-- Security scanning
-- Database integrity checks
-
-#### 6.2 Production Validation
-- Smoke tests
-- Traffic routing tests
-- Rollback procedures
-- Monitoring validation
-
-## Implementation Timeline
-
-### Week 1-2: Infrastructure Design
-- [ ] Analyze existing infrastructure
-- [ ] Design parallel environments
-- [ ] Create Terraform modules
-- [ ] Security review and approval
-
-### Week 3-4: Core Infrastructure
-- [ ] Deploy VPC and networking
-- [ ] Create security groups and IAM
-- [ ] Deploy RDS instances
-- [ ] Configure monitoring
-
-### Week 5-6: Application Environments
-- [ ] Deploy EC2 instances
-- [ ] Configure load balancers
-- [ ] Set up auto-scaling
-- [ ] Test basic connectivity
-
-### Week 7-8: Migration Testing
-- [ ] Database migration testing
-- [ ] Application deployment testing
-- [ ] Blue-green deployment testing
-- [ ] Performance validation
-
-## Cost Estimation
-
-### Monthly Costs (Approximate)
-- **EC2**: $10-50 per environment (t3.micro instances)
-- **RDS**: $50-200 per environment (db.t3.micro)
-- **EBS**: $5-20 per environment
-- **ALB**: $20-30 per production environment
-- **Data Transfer**: Variable based on traffic
-
-### Total Parallel Environments
-- 4 new environments: ~$300-600/month additional
-- Database copies: One-time data transfer costs
-
-## Risk Mitigation
-
-### Rollback Strategy
-- Keep existing environments untouched
-- Implement proper backups before changes
-- Test rollback procedures in staging
-
-### Downtime Minimization
-- Blue-green deployment for production
-- Gradual traffic shifting
-- Monitoring and alerting
-
-### Security Considerations
-- Least privilege access
-- Encrypted communications
-- Regular security updates
-
-## Next Steps
-
-1. **Infrastructure Review**: Validate current setup and requirements
-2. **Resource Planning**: Confirm AWS account access and budgets
-3. **Timeline Agreement**: Align on implementation schedule
-4. **Kickoff**: Begin Phase 1 infrastructure planning
-
-## Questions for Clarification
-
-1. What are the specific Angular and Symfony versions being migrated to?
-2. Are there any specific networking requirements (VPN, Direct Connect)?
-3. What monitoring tools are currently in use?
-4. Are there existing Terraform configurations to reference?
-5. What are the database sizes and expected growth?
+- Enable **daily or on-demand releases** with minimal risk
+- Reduce AWS monthly cost from **~$2,500 to < $1,000** (including database)
+- Support **parallel frontend and backend migrations**
+- Ensure **zero-downtime production deployments**
+- Improve observability, security, and scalability
 
 ---
 
-*This plan provides a comprehensive approach to creating parallel AWS environments for application migrations while maintaining the existing infrastructure.*
+## 2. Current Infrastructure Assessment (AS-IS)
+
+### 2.1 Architecture Overview
+
+- Multiple AWS accounts (Legacy Production / Legacy Staging+Dev)
+- EC2-based workloads with custom blue-green logic
+- Jenkins-driven deployments
+- Docker used without orchestration
+- Aurora MySQL (Writer + Reader)
+- Redis via ElastiCache
+- Cloudflare in front of ALB
+
+### 2.2 Key Limitations
+
+#### Operational Complexity
+
+- Manual scaling and deployment steps
+- Custom blue-green logic based on EC2 lifecycle
+- High deployment risk and slow rollback
+
+#### Cost Inefficiency
+
+- Aurora I/O and storage costs are excessively high
+- NAT Gateway runs 24/7
+- Underutilized EC2 instances
+- CloudWatch log retention > 1.4 TB
+
+#### Limited Scalability
+
+- Scaling at instance level only
+- No application-level autoscaling
+
+#### CI/CD Constraints
+
+- Jenkins maintenance overhead
+- No native IAM or Terraform state integration
+
+---
+
+## 3. Target Architecture (TO-BE)
+
+### 3.1 Design Principles
+
+- Infrastructure as Code (Terraform)
+- Immutable deployments
+- Managed services over self-managed EC2
+- Separation of frontend and backend lifecycles
+- Cost-aware, pay-per-use model
+
+For detailed Terraform module structure, see: [Terraform Infrastructure Structure](terraform-structure.md)
+
+### 3.2 Compute Layer
+
+**Amazon ECS with Fargate**
+
+- No EC2 management
+- Per-task billing
+- Native autoscaling
+- Built-in blue-green deployment with ALB
+
+> EKS was evaluated but rejected due to higher operational overhead.
+
+### 3.3 Networking
+
+- Dedicated VPC per environment
+- Public subnets: ALB
+- Private subnets: ECS tasks, RDS, Redis
+- Minimized NAT Gateway usage
+
+### 3.4 Load Balancing
+
+- Application Load Balancer
+- Path-based routing:
+  - `/api/*` → Symfony API
+  - `/` → Angular apps
+
+### 3.5 Database
+
+- Aurora MySQL Serverless v2 (if compatible)
+- Automated backups + Point-In-Time Recovery
+- Snapshot-based cloning for migration environments
+
+### 3.6 CI/CD
+
+**Bitbucket Pipelines**
+
+Pipeline stages:
+
+1. Build & Test
+2. Docker Image Build
+3. Push to Amazon ECR
+4. Terraform Plan
+5. Terraform Apply
+6. ECS Blue-Green Deployment
+
+For detailed Bitbucket Pipelines configuration, see: [Bitbucket Pipelines YAML](bitbucket-pipelines.yaml)
+
+![CI/CD Pipeline Overview](image/cicd.png)
+![CI/CD Pipeline Details](image/cicd2.png)
+![CI/CD Pipeline Architecture](image/cicd3.png)
+
+### 3.7 Observability & Notifications
+
+- CloudWatch Logs with 30–90 day retention
+- CloudWatch Alarms
+- AWS Budgets
+- Slack notifications via SNS
+
+---
+
+## 4. Environment Strategy
+
+| Purpose   | Environments                         |
+| --------- | ------------------------------------ |
+| Legacy    | Existing EC2-based infra (unchanged) |
+| Migration | New ECS-based Staging + Production   |
+
+- Frontend and Backend deployed independently
+- Only one migration track active at a time
+- Rollback via ALB target group switch
+
+For detailed production architecture documentation, see: [Production Architecture Overview](production-architecture.md)
+
+![Production Architecture](image/prod.svg)
+
+---
+
+## 5. Migration Plan & Timeline
+
+### Phase 0 – Preparation (24 hours)
+
+| Task                              | Hours |
+| --------------------------------- | ----- |
+| New AWS accounts setup            | 4     |
+| IAM & access model                | 4     |
+| Terraform backend (S3 + DynamoDB) | 4     |
+| Base networking modules           | 8     |
+| ECR repositories                  | 4     |
+
+---
+
+### Phase 1 – Core Platform (32 hours)
+
+| Task                 | Hours |
+| -------------------- | ----- |
+| ECS Fargate cluster  | 6     |
+| ALB + target groups  | 6     |
+| Autoscaling policies | 4     |
+| Logging & retention  | 4     |
+| Slack notifications  | 4     |
+| Security hardening   | 8     |
+
+---
+
+### Phase 2 – Database Migration Setup (24 hours)
+
+| Task                         | Hours |
+| ---------------------------- | ----- |
+| Aurora Serverless evaluation | 4     |
+| Snapshot copy from legacy    | 6     |
+| Parallel DB restore          | 6     |
+| Connectivity tests           | 4     |
+| Backup & PITR validation     | 4     |
+
+---
+
+### Phase 3 – Backend (Symfony) Migration (40 hours)
+
+| Task                         | Hours |
+| ---------------------------- | ----- |
+| Dockerfile modernization     | 6     |
+| PHP / Composer upgrades      | 6     |
+| ECS task definitions         | 6     |
+| CI/CD pipeline               | 6     |
+| Staging deploy & test        | 8     |
+| Production blue-green deploy | 8     |
+
+---
+
+### Phase 4 – Frontend (Angular) Migration (32 hours)
+
+| Task                                    | Hours |
+| --------------------------------------- | ----- |
+| Multi-version Node/Angular Docker setup | 6     |
+| Build optimization                      | 4     |
+| ECS services                            | 6     |
+| CI/CD pipeline                          | 6     |
+| Staging validation                      | 6     |
+| Production deploy                       | 4     |
+
+---
+
+### Phase 5 – Legacy Decommissioning (16 hours)
+
+| Task                     | Hours |
+| ------------------------ | ----- |
+| Traffic cutover          | 2     |
+| Jenkins shutdown         | 4     |
+| Legacy EC2 scale-down    | 4     |
+| Cost validation          | 4     |
+| Documentation & handover | 2     |
+
+---
+
+**Total Estimated Effort: 168 hours**
+
+---
+
+## 6. Cost Comparison (WAS vs BECOMES)
+
+| Area       | Current       | New                     |
+| ---------- | ------------- | ----------------------- |
+| Compute    | EC2 always-on | ECS Fargate (on-demand) |
+| Deployment | Manual EC2    | Native blue-green       |
+| Database   | Fixed Aurora  | Serverless Aurora       |
+| Logs       | Unlimited     | Controlled retention    |
+| NAT        | Always-on     | Optimized               |
+
+**Expected monthly cost:** $700–$1,000
+
+For detailed cost breakdown and analysis, see: [Cost Analysis Before vs After](cost-breakdown.md)
+
+---
+
+## 7. Key Benefits
+
+### Speed
+
+- Deployments in minutes
+- Parallel frontend/backend releases
+- Fast rollbacks
+
+### Convenience
+
+- No server management
+- Fully automated pipelines
+- Simple environment cloning
+
+### Cost
+
+- Pay only for running workloads
+- Lower RDS and NAT costs
+- Predictable billing
+
+---
+
+## 8. Conclusion
+
+The proposed architecture modernizes the platform while minimizing risk, enabling faster delivery, reducing cost, and simplifying long-term operations.
+
+Legacy environments remain untouched, ensuring safe migration and rollback at every stage.

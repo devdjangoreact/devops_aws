@@ -1,0 +1,450 @@
+# Bitbucket Pipelines Configuration for AWS Infrastructure Modernization
+
+# This pipeline handles CI/CD for both frontend (Angular) and backend (Symfony) applications
+# with full infrastructure deployment via Terraform
+
+image: node:18 # Primary image with Node.js for frontend builds
+
+definitions:
+  # Caches for faster builds
+  caches:
+    node: node_modules
+    composer: ~/.composer/cache
+    docker: docker
+
+  # YAML anchors for reusable steps
+  steps:
+    - &install-frontend-deps
+      name: Install Frontend Dependencies
+      script:
+        - echo "Installing frontend dependencies..."
+        - cd frontend
+        - npm ci --prefer-offline --no-audit
+        - cd ..
+
+    - &install-backend-deps
+      name: Install Backend Dependencies
+      script:
+        - echo "Installing backend dependencies..."
+        - cd backend
+        - composer install --no-dev --optimize-autoloader --prefer-dist --no-interaction
+        - cd ..
+
+    - &run-frontend-tests
+      name: Run Frontend Tests
+      script:
+        - echo "Running frontend tests..."
+        - cd frontend
+        - npm run lint
+        - npm run test:ci
+        - cd ..
+
+    - &run-backend-tests
+      name: Run Backend Tests
+      script:
+        - echo "Running backend tests..."
+        - cd backend
+        - ./bin/phpunit --coverage-clover=coverage.xml
+        - cd ..
+
+    - &build-frontend-image
+      name: Build Frontend Docker Image
+      script:
+        - echo "Building frontend Docker image..."
+        - cd frontend
+        - docker build -f Dockerfile --build-arg ANGULAR_VERSION=${ANGULAR_VERSION:-latest} --build-arg NODE_ENV=production --tag $FRONTEND_IMAGE_URI:$BITBUCKET_COMMIT --tag $FRONTEND_IMAGE_URI:latest .
+        - cd ..
+
+    - &build-backend-image
+      name: Build Backend Docker Image
+      script:
+        - echo "Building backend Docker image..."
+        - cd backend
+        - docker build -f Dockerfile --build-arg PHP_VERSION=${PHP_VERSION:-8.1} --build-arg APP_ENV=prod --tag $BACKEND_IMAGE_URI:$BITBUCKET_COMMIT --tag $BACKEND_IMAGE_URI:latest .
+        - cd ..
+
+    - &push-images
+      name: Push Docker Images to ECR
+      script:
+        - echo "Pushing Docker images to ECR..."
+        - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+        - docker push $FRONTEND_IMAGE_URI:$BITBUCKET_COMMIT
+        - docker push $FRONTEND_IMAGE_URI:latest
+        - docker push $BACKEND_IMAGE_URI:$BITBUCKET_COMMIT
+        - docker push $BACKEND_IMAGE_URI:latest
+
+    - &terraform-init
+      name: Initialize Terraform
+      script:
+        - echo "Initializing Terraform..."
+        - cd terraform
+        - terraform init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=$TF_STATE_KEY" -backend-config="region=$AWS_DEFAULT_REGION" -backend-config="dynamodb_table=$TF_LOCK_TABLE"
+        - cd ..
+
+    - &terraform-plan
+      name: Plan Terraform Changes
+      script:
+        - echo "Planning Terraform changes..."
+        - cd terraform
+        - terraform plan -var-file="$ENVIRONMENT.tfvars" -var="frontend_image_tag=$BITBUCKET_COMMIT" -var="backend_image_tag=$BITBUCKET_COMMIT" -out=tfplan -detailed-exitcode
+        - cd ..
+
+    - &terraform-apply
+      name: Apply Terraform Changes
+      script:
+        - echo "Applying Terraform changes..."
+        - cd terraform
+        - terraform apply -auto-approve tfplan
+        - cd ..
+
+    - &deploy-frontend
+      name: Deploy Frontend Service
+      script:
+        - echo "Deploying frontend service..."
+        - aws ecs update-service --cluster $ECS_CLUSTER --service frontend-app1 --force-new-deployment --region $AWS_DEFAULT_REGION
+
+    - &deploy-backend
+      name: Deploy Backend Service
+      script:
+        - echo "Deploying backend service..."
+        - aws ecs update-service --cluster $ECS_CLUSTER --service backend-api --force-new-deployment --region $AWS_DEFAULT_REGION
+
+    - &run-smoke-tests
+      name: Run Smoke Tests
+      script:
+        - echo "Running smoke tests..."
+        - curl -f -s --max-time 30 $ALB_DNS_NAME/health || exit 1
+        - curl -f -s --max-time 30 $ALB_DNS_NAME/api/health || exit 1
+
+    - &notify-slack
+      name: Send Slack Notification
+      script:
+        - echo "Sending Slack notification..."
+        - curl -X POST -H 'Content-type: application/json' --data "{\"text\":\"Pipeline $BITBUCKET_BUILD_NUMBER completed for $BITBUCKET_BRANCH\",\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Pipeline #$BITBUCKET_BUILD_NUMBER*\\nBranch: $BITBUCKET_BRANCH\\nStatus: $PIPELINE_STATUS\\nCommit: $BITBUCKET_COMMIT\"}}]}" $SLACK_WEBHOOK_URL
+
+# Pipeline configuration
+pipelines:
+  branches:
+    main:
+      - step: &build-and-test
+          name: "Build and Test All Components"
+          caches:
+            - node
+            - composer
+          script:
+            - echo "Installing frontend dependencies..."
+            - cd frontend
+            - npm ci --prefer-offline --no-audit
+            - cd ..
+            - echo "Installing backend dependencies..."
+            - cd backend
+            - composer install --no-dev --optimize-autoloader --prefer-dist --no-interaction
+            - cd ..
+            - echo "Running frontend tests..."
+            - cd frontend
+            - npm run lint
+            - npm run test:ci
+            - cd ..
+            - echo "Running backend tests..."
+            - cd backend
+            - ./bin/phpunit --coverage-clover=coverage.xml
+            - cd ..
+          artifacts:
+            - frontend/coverage/**
+            - backend/coverage.xml
+
+      - step: &build-images
+          name: "Build Docker Images"
+          services:
+            - docker
+          script:
+            - echo "Building frontend Docker image..."
+            - cd frontend
+            - docker build -f Dockerfile --build-arg ANGULAR_VERSION=${ANGULAR_VERSION:-latest} --build-arg NODE_ENV=production --tag $FRONTEND_IMAGE_URI:$BITBUCKET_COMMIT --tag $FRONTEND_IMAGE_URI:latest .
+            - cd ..
+            - echo "Building backend Docker image..."
+            - cd backend
+            - docker build -f Dockerfile --build-arg PHP_VERSION=${PHP_VERSION:-8.1} --build-arg APP_ENV=prod --tag $BACKEND_IMAGE_URI:$BITBUCKET_COMMIT --tag $BACKEND_IMAGE_URI:latest .
+            - cd ..
+          artifacts:
+            - frontend/Dockerfile
+            - backend/Dockerfile
+
+      - step: &deploy-staging
+          name: "Deploy to Staging"
+          deployment: staging
+          script:
+            - export ENVIRONMENT=staging
+            - export ECR_REGISTRY=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+            - export FRONTEND_IMAGE_URI=$ECR_REGISTRY/lq3/frontend
+            - export BACKEND_IMAGE_URI=$ECR_REGISTRY/lq3/backend
+            - export ECS_CLUSTER=lq3-staging
+            - export ALB_DNS_NAME=$STAGING_ALB_DNS
+            - echo "Pushing Docker images to ECR..."
+            - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+            - docker push $FRONTEND_IMAGE_URI:$BITBUCKET_COMMIT
+            - docker push $FRONTEND_IMAGE_URI:latest
+            - docker push $BACKEND_IMAGE_URI:$BITBUCKET_COMMIT
+            - docker push $BACKEND_IMAGE_URI:latest
+            - echo "Initializing Terraform..."
+            - cd terraform
+            - terraform init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=$TF_STATE_KEY" -backend-config="region=$AWS_DEFAULT_REGION" -backend-config="dynamodb_table=$TF_LOCK_TABLE"
+            - cd ..
+            - echo "Planning Terraform changes..."
+            - cd terraform
+            - terraform plan -var-file="$ENVIRONMENT.tfvars" -var="frontend_image_tag=$BITBUCKET_COMMIT" -var="backend_image_tag=$BITBUCKET_COMMIT" -out=tfplan -detailed-exitcode
+            - cd ..
+            - echo "Applying Terraform changes..."
+            - cd terraform
+            - terraform apply -auto-approve tfplan
+            - cd ..
+            - echo "Deploying frontend service..."
+            - aws ecs update-service --cluster $ECS_CLUSTER --service frontend-app1 --force-new-deployment --region $AWS_DEFAULT_REGION
+            - echo "Deploying backend service..."
+            - aws ecs update-service --cluster $ECS_CLUSTER --service backend-api --force-new-deployment --region $AWS_DEFAULT_REGION
+            - echo "Running smoke tests..."
+            - curl -f -s --max-time 30 $ALB_DNS_NAME/health || exit 1
+            - curl -f -s --max-time 30 $ALB_DNS_NAME/api/health || exit 1
+          after-script:
+            - echo "Sending Slack notification..."
+            - curl -X POST -H 'Content-type: application/json' --data "{\"text\":\"Pipeline $BITBUCKET_BUILD_NUMBER completed for $BITBUCKET_BRANCH\",\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Pipeline #$BITBUCKET_BUILD_NUMBER*\\nBranch: $BITBUCKET_BRANCH\\nStatus: $PIPELINE_STATUS\\nCommit: $BITBUCKET_COMMIT\"}}]}" $SLACK_WEBHOOK_URL
+
+      - step: &manual-production-deploy
+          name: "Deploy to Production (Manual)"
+          deployment: production
+          trigger: manual
+          script:
+            - export ENVIRONMENT=production
+            - export ECR_REGISTRY=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+            - export FRONTEND_IMAGE_URI=$ECR_REGISTRY/lq3/frontend
+            - export BACKEND_IMAGE_URI=$ECR_REGISTRY/lq3/backend
+            - export ECS_CLUSTER=lq3-production
+            - export ALB_DNS_NAME=$PRODUCTION_ALB_DNS
+            - echo "Pushing Docker images to ECR..."
+            - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+            - docker push $FRONTEND_IMAGE_URI:$BITBUCKET_COMMIT
+            - docker push $FRONTEND_IMAGE_URI:latest
+            - docker push $BACKEND_IMAGE_URI:$BITBUCKET_COMMIT
+            - docker push $BACKEND_IMAGE_URI:latest
+            - echo "Initializing Terraform..."
+            - cd terraform
+            - terraform init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=$TF_STATE_KEY" -backend-config="region=$AWS_DEFAULT_REGION" -backend-config="dynamodb_table=$TF_LOCK_TABLE"
+            - cd ..
+            - echo "Planning Terraform changes..."
+            - cd terraform
+            - terraform plan -var-file="$ENVIRONMENT.tfvars" -var="frontend_image_tag=$BITBUCKET_COMMIT" -var="backend_image_tag=$BITBUCKET_COMMIT" -out=tfplan -detailed-exitcode
+            - cd ..
+            - echo "Review Terraform plan above and approve deployment"
+            - echo "Manual approval required - deployment paused"
+            - echo "Applying Terraform changes..."
+            - cd terraform
+            - terraform apply -auto-approve tfplan
+            - cd ..
+            - echo "Deploying frontend service..."
+            - aws ecs update-service --cluster $ECS_CLUSTER --service frontend-app1 --force-new-deployment --region $AWS_DEFAULT_REGION
+            - echo "Deploying backend service..."
+            - aws ecs update-service --cluster $ECS_CLUSTER --service backend-api --force-new-deployment --region $AWS_DEFAULT_REGION
+            - echo "Running smoke tests..."
+            - curl -f -s --max-time 30 $ALB_DNS_NAME/health || exit 1
+            - curl -f -s --max-time 30 $ALB_DNS_NAME/api/health || exit 1
+          after-script:
+            - echo "Sending Slack notification..."
+            - curl -X POST -H 'Content-type: application/json' --data "{\"text\":\"Pipeline $BITBUCKET_BUILD_NUMBER completed for $BITBUCKET_BRANCH\",\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Pipeline #$BITBUCKET_BUILD_NUMBER*\\nBranch: $BITBUCKET_BRANCH\\nStatus: $PIPELINE_STATUS\\nCommit: $BITBUCKET_COMMIT\"}}]}" $SLACK_WEBHOOK_URL
+
+    develop:
+      - step:
+          name: "Build and Test (Develop Branch)"
+          caches:
+            - node
+            - composer
+          script:
+            - echo "Installing frontend dependencies..."
+            - cd frontend
+            - npm ci --prefer-offline --no-audit
+            - cd ..
+            - echo "Installing backend dependencies..."
+            - cd backend
+            - composer install --no-dev --optimize-autoloader --prefer-dist --no-interaction
+            - cd ..
+            - echo "Running frontend tests..."
+            - cd frontend
+            - npm run lint
+            - npm run test:ci
+            - cd ..
+            - echo "Running backend tests..."
+            - cd backend
+            - ./bin/phpunit --coverage-clover=coverage.xml
+            - cd ..
+
+      - step: &deploy-develop
+          name: "Deploy to Development Environment"
+          script:
+            - export ENVIRONMENT=develop
+            - export ECR_REGISTRY=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+            - export FRONTEND_IMAGE_URI=$ECR_REGISTRY/lq3/frontend
+            - export BACKEND_IMAGE_URI=$ECR_REGISTRY/lq3/backend
+            - export ECS_CLUSTER=lq3-develop
+            - export ALB_DNS_NAME=$DEVELOP_ALB_DNS
+            - echo "Building frontend Docker image..."
+            - cd frontend
+            - docker build -f Dockerfile --build-arg ANGULAR_VERSION=${ANGULAR_VERSION:-latest} --build-arg NODE_ENV=production --tag $FRONTEND_IMAGE_URI:$BITBUCKET_COMMIT --tag $FRONTEND_IMAGE_URI:latest .
+            - cd ..
+            - echo "Building backend Docker image..."
+            - cd backend
+            - docker build -f Dockerfile --build-arg PHP_VERSION=${PHP_VERSION:-8.1} --build-arg APP_ENV=prod --tag $BACKEND_IMAGE_URI:$BITBUCKET_COMMIT --tag $BACKEND_IMAGE_URI:latest .
+            - cd ..
+            - echo "Pushing Docker images to ECR..."
+            - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY
+            - docker push $FRONTEND_IMAGE_URI:$BITBUCKET_COMMIT
+            - docker push $FRONTEND_IMAGE_URI:latest
+            - docker push $BACKEND_IMAGE_URI:$BITBUCKET_COMMIT
+            - docker push $BACKEND_IMAGE_URI:latest
+            - echo "Initializing Terraform..."
+            - cd terraform
+            - terraform init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=$TF_STATE_KEY" -backend-config="region=$AWS_DEFAULT_REGION" -backend-config="dynamodb_table=$TF_LOCK_TABLE"
+            - cd ..
+            - echo "Planning Terraform changes..."
+            - cd terraform
+            - terraform plan -var-file="$ENVIRONMENT.tfvars" -var="frontend_image_tag=$BITBUCKET_COMMIT" -var="backend_image_tag=$BITBUCKET_COMMIT" -out=tfplan -detailed-exitcode
+            - cd ..
+            - echo "Applying Terraform changes..."
+            - cd terraform
+            - terraform apply -auto-approve tfplan
+            - cd ..
+            - echo "Deploying frontend service..."
+            - aws ecs update-service --cluster $ECS_CLUSTER --service frontend-app1 --force-new-deployment --region $AWS_DEFAULT_REGION
+            - echo "Deploying backend service..."
+            - aws ecs update-service --cluster $ECS_CLUSTER --service backend-api --force-new-deployment --region $AWS_DEFAULT_REGION
+            - echo "Running smoke tests..."
+            - curl -f -s --max-time 30 $ALB_DNS_NAME/health || exit 1
+            - curl -f -s --max-time 30 $ALB_DNS_NAME/api/health || exit 1
+
+    feature/*:
+      - step:
+          name: "Build and Test (Feature Branch)"
+          caches:
+            - node
+            - composer
+          script:
+            - echo "Installing frontend dependencies..."
+            - cd frontend
+            - npm ci --prefer-offline --no-audit
+            - cd ..
+            - echo "Installing backend dependencies..."
+            - cd backend
+            - composer install --no-dev --optimize-autoloader --prefer-dist --no-interaction
+            - cd ..
+            - echo "Running frontend tests..."
+            - cd frontend
+            - npm run lint
+            - npm run test:ci
+            - cd ..
+            - echo "Running backend tests..."
+            - cd backend
+            - ./bin/phpunit --coverage-clover=coverage.xml
+            - cd ..
+
+  pull-requests:
+    "**":
+      - step:
+          name: "Pull Request Validation"
+          caches:
+            - node
+            - composer
+          script:
+            - echo "Installing frontend dependencies..."
+            - cd frontend
+            - npm ci --prefer-offline --no-audit
+            - cd ..
+            - echo "Installing backend dependencies..."
+            - cd backend
+            - composer install --no-dev --optimize-autoloader --prefer-dist --no-interaction
+            - cd ..
+            - echo "Running frontend tests..."
+            - cd frontend
+            - npm run lint
+            - npm run test:ci
+            - cd ..
+            - echo "Running backend tests..."
+            - cd backend
+            - ./bin/phpunit --coverage-clover=coverage.xml
+            - cd ..
+            - echo "Running security scans..."
+            - cd frontend && npm audit --audit-level=moderate || true
+            - cd ../backend && composer audit || true
+            - echo "Running code quality checks..."
+            - cd ../frontend && npm run lint:ci || true
+            - cd ../backend && ./vendor/bin/phpcs --standard=PSR12 src/ || true
+
+  # Custom pipelines for specific operations
+  custom:
+    infrastructure-only:
+      - step:
+          name: "Infrastructure Only Deployment"
+          script:
+            - export ENVIRONMENT=$ENVIRONMENT
+            - echo "Initializing Terraform..."
+            - cd terraform
+            - terraform init -backend-config="bucket=$TF_STATE_BUCKET" -backend-config="key=$TF_STATE_KEY" -backend-config="region=$AWS_DEFAULT_REGION" -backend-config="dynamodb_table=$TF_LOCK_TABLE"
+            - cd ..
+            - echo "Planning Terraform changes..."
+            - cd terraform
+            - terraform plan -var-file="$ENVIRONMENT.tfvars" -var="frontend_image_tag=$BITBUCKET_COMMIT" -var="backend_image_tag=$BITBUCKET_COMMIT" -out=tfplan -detailed-exitcode
+            - cd ..
+            - echo "Applying Terraform changes..."
+            - cd terraform
+            - terraform apply -auto-approve tfplan
+            - cd ..
+          variables:
+            - name: ENVIRONMENT
+              default: "staging"
+
+    rollback:
+      - step:
+          name: "Rollback Deployment"
+          script:
+            - export ENVIRONMENT=$ENVIRONMENT
+            - cd terraform
+            - terraform workspace select $ENVIRONMENT
+            - terraform plan -var="frontend_image_tag=$ROLLBACK_TAG" -var="backend_image_tag=$ROLLBACK_TAG" -out=rollback-plan
+            - terraform apply rollback-plan
+            - cd ..
+            - echo "Deploying frontend service..."
+            - aws ecs update-service --cluster $ECS_CLUSTER --service frontend-app1 --force-new-deployment --region $AWS_DEFAULT_REGION
+            - echo "Deploying backend service..."
+            - aws ecs update-service --cluster $ECS_CLUSTER --service backend-api --force-new-deployment --region $AWS_DEFAULT_REGION
+            - echo "Running smoke tests..."
+            - curl -f -s --max-time 30 $ALB_DNS_NAME/health || exit 1
+            - curl -f -s --max-time 30 $ALB_DNS_NAME/api/health || exit 1
+          variables:
+            - name: ENVIRONMENT
+              default: "production"
+            - name: ROLLBACK_TAG
+              default: "latest"
+
+    database-migration:
+      - step:
+          name: "Database Migration"
+          script:
+            - export ENVIRONMENT=$ENVIRONMENT
+            - echo "Running database migrations..."
+            - aws ecs run-task --cluster $ECS_CLUSTER --task-definition migration-task --launch-type FARGATE --network-configuration "awsvpcConfiguration={subnets=[$PRIVATE_SUBNETS],securityGroups=[$ECS_SECURITY_GROUP],assignPublicIp=DISABLED}" --region $AWS_DEFAULT_REGION
+          variables:
+            - name: ENVIRONMENT
+              default: "staging"
+
+# Global configuration
+options:
+  docker: true
+  max-time: 30 # Maximum pipeline execution time in minutes
+
+# Environment variables (configured in Bitbucket repository settings)
+# AWS_DEFAULT_REGION: us-west-2
+# AWS_ACCOUNT_ID: 123456789012
+# TF_STATE_BUCKET: lq3-terraform-state
+# TF_STATE_KEY: terraform.tfstate
+# TF_LOCK_TABLE: terraform-locks
+# SLACK_WEBHOOK_URL: https://hooks.slack.com/services/...
+# STAGING_ALB_DNS: staging.lq3.example.com
+# PRODUCTION_ALB_DNS: prod.lq3.example.com
+# DEVELOP_ALB_DNS: develop.lq3.example.com
